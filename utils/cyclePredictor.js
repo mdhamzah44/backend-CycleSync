@@ -80,9 +80,22 @@ function calculateRegularityScore(cycles) {
 function getCalendarMarkers(cycles, predictions, startDate, endDate) {
   const markers = {};
   const markDate = (date, type, color) => {
-    const key = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+    let key;
+    if (typeof date === 'string') {
+      key = date.split('T')[0];
+    } else {
+      // Use UTC date parts to avoid timezone shifts
+      const d = new Date(date);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      key = `${y}-${m}-${day}`;
+    }
     if (!markers[key]) markers[key] = { dots: [] };
-    markers[key].dots.push({ color, key: type });
+    // Avoid duplicate keys
+    if (!markers[key].dots.find(d => d.key === type)) {
+      markers[key].dots.push({ color, key: type });
+    }
   };
 
   cycles.forEach(cycle => {
@@ -90,23 +103,29 @@ function getCalendarMarkers(cycles, predictions, startDate, endDate) {
     const end = cycle.endDate ? new Date(cycle.endDate) : addDays(start, (cycle.periodLength || 5) - 1);
     let d = new Date(start);
     while (d <= end) {
-      markDate(d, 'period', '#E91E8C');
+      markDate(new Date(d), 'period', '#E91E8C');
       d = addDays(d, 1);
     }
+    // Intercourse markers
+    (cycle.intercourse || []).forEach(i => {
+      if (i.date) markDate(new Date(i.date), 'intercourse', '#FF6B9D');
+    });
   });
 
   if (predictions) {
     const { nextPeriodDate, ovulationDate, fertileWindowStart, fertileWindowEnd } = predictions;
-    // Future period
-    for (let i = 0; i < 5; i++) markDate(addDays(nextPeriodDate, i), 'future_period', '#F48FB1');
-    // Fertile window
-    let d = new Date(fertileWindowStart);
-    while (d <= fertileWindowEnd) {
-      markDate(d, 'fertile', '#81C784');
-      d = addDays(d, 1);
+    if (nextPeriodDate) {
+      for (let i = 0; i < 5; i++) markDate(addDays(new Date(nextPeriodDate), i), 'future_period', '#F48FB1');
     }
-    // Ovulation
-    markDate(ovulationDate, 'ovulation', '#FFB300');
+    if (fertileWindowStart && fertileWindowEnd) {
+      let d = new Date(fertileWindowStart);
+      const end = new Date(fertileWindowEnd);
+      while (d <= end) {
+        markDate(new Date(d), 'fertile', '#81C784');
+        d = addDays(d, 1);
+      }
+    }
+    if (ovulationDate) markDate(new Date(ovulationDate), 'ovulation', '#FFB300');
   }
 
   return markers;

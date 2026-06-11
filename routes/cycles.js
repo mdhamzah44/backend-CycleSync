@@ -94,6 +94,39 @@ router.delete('/:id', auth, async (req, res) => {
   }
 });
 
+// Log intercourse for ANY date (finds closest cycle or creates a standalone record)
+router.post('/intercourse-log', auth, async (req, res) => {
+  try {
+    const { date, protected: isProtected, contraceptionType, notes } = req.body;
+    const logDate = new Date(date || new Date());
+
+    // Find the cycle that contains this date or was most recent before it
+    let cycle = await Cycle.findOne({
+      userId: req.user._id,
+      startDate: { $lte: logDate },
+    }).sort({ startDate: -1 });
+
+    // If no cycle found, use the first ever cycle or create a placeholder
+    if (!cycle) {
+      cycle = await Cycle.findOne({ userId: req.user._id }).sort({ startDate: 1 });
+    }
+
+    if (!cycle) {
+      return res.status(400).json({ error: 'Please log a period first before adding intimacy data.' });
+    }
+
+    // Remove any existing entry for this date (upsert by date)
+    cycle.intercourse = cycle.intercourse.filter(
+      (i: any) => new Date(i.date).toDateString() !== logDate.toDateString()
+    );
+    cycle.intercourse.push({ date: logDate, protected: isProtected, contraceptionType, notes });
+    await cycle.save();
+    res.json({ cycle });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Log intercourse
 router.post('/:id/intercourse', auth, async (req, res) => {
   try {

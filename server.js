@@ -25,6 +25,9 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/cyclesync
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => console.error('❌ MongoDB error:', err));
 
+// Ensure models are registered
+require('./models/ChatSession');
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/cycles', cycleRoutes);

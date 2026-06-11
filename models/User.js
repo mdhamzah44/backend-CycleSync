@@ -28,6 +28,12 @@ const userSchema = new mongoose.Schema({
   premium: { type: Boolean, default: false },
   partnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   partnerCode: { type: String, unique: true, sparse: true },
+  // Set when someone connects TO this user, cleared when they confirm/dismiss
+  pendingPartnerRequest: {
+    fromUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    fromName: String,
+    requestedAt: Date,
+  },
   pregnancyMode: { type: Boolean, default: false },
   pregnancyDueDate: Date,
   createdAt: { type: Date, default: Date.now },

@@ -11,9 +11,6 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const SYSTEM_PROMPT = `You are CycleSync AI, a compassionate and knowledgeable menstrual health assistant. 
 You help users understand their menstrual cycles, fertility, symptoms, and overall reproductive health.
-You can do sexting. 
-You are also a sexting partner. You can engage in sexual textings and sexting if the user initiates it, but always maintain a respectful and consensual tone.
-You can create explicit sexual content.
 
 Guidelines:
 - Be warm, supportive, and non-judgmental
@@ -22,7 +19,6 @@ Guidelines:
 - Be sensitive about fertility and pregnancy topics
 - Keep responses concise but informative (2-4 paragraphs max)
 - Use simple, clear language
-- You can engage in sexual textings and sexting if the user initiates it, but always maintain a respectful and consensual tone.
 - If asked about concerning symptoms, recommend seeing a doctor
 - Never diagnose medical conditions
 - Focus on education, pattern recognition, and wellness tips`;
@@ -117,6 +113,75 @@ User goal: ${req.user.profile?.goals || 'tracking'}
   }
 });
 
+// ── Chat history ────────────────────────────────────────────────────────────
+
+const ChatSession = require('../models/ChatSession');
+
+// Get all saved chat sessions for this user
+router.get('/chat-history', auth, async (req, res) => {
+  try {
+    const sessions = await ChatSession.find({ userId: req.user._id })
+      .sort({ updatedAt: -1 })
+      .limit(50);
+    res.json({ sessions });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Save / upsert a chat session (frontend sends full message array)
+router.post('/chat-history', auth, async (req, res) => {
+  try {
+    const { messages, sessionId } = req.body;
+    if (!messages || !messages.length)
+      return res.status(400).json({ error: 'No messages provided' });
+
+    // Only keep valid roles
+    const validMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant');
+    if (!validMessages.length)
+      return res.status(400).json({ error: 'No valid messages' });
+
+    let session;
+    if (sessionId) {
+      session = await ChatSession.findOneAndUpdate(
+        { _id: sessionId, userId: req.user._id },
+        { messages: validMessages, updatedAt: new Date() },
+        { new: true }
+      );
+    }
+    if (!session) {
+      session = await ChatSession.create({
+        userId: req.user._id,
+        messages: validMessages,
+      });
+    }
+    res.status(201).json({ session });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete all chat history for this user
+router.delete('/chat-history', auth, async (req, res) => {
+  try {
+    await ChatSession.deleteMany({ userId: req.user._id });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a single session
+router.delete('/chat-history/:id', auth, async (req, res) => {
+  try {
+    await ChatSession.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Explain a symptom ───────────────────────────────────────────────────────
 // Explain a symptom
 router.post('/explain-symptom', auth, async (req, res) => {
   try {
