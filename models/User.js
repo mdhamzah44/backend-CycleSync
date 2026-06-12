@@ -28,6 +28,8 @@ const userSchema = new mongoose.Schema({
   premium: { type: Boolean, default: false },
   partnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   partnerCode: { type: String, unique: true, sparse: true },
+  // True for the person who joined using someone else's code (the "viewer")
+  isPartnerViewer: { type: Boolean, default: false },
   // Set when someone connects TO this user, cleared when they confirm/dismiss
   pendingPartnerRequest: {
     fromUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

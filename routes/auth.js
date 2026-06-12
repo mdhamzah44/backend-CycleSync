@@ -71,6 +71,7 @@ router.post('/register', async (req, res) => {
       name,
       partnerCode: newPartnerCode,
       partnerId,
+      isPartnerViewer: !!partnerId, // viewer = the one who entered someone's code
       'profile.goals': goal || 'tracking',
     });
     await user.save();
@@ -116,6 +117,7 @@ router.post('/register', async (req, res) => {
         settings: user.settings,
         partnerCode: newPartnerCode,
         partnerId: partnerId,
+        isPartnerViewer: !!partnerId,
       },
       partnerInfo,
     });
@@ -142,6 +144,7 @@ router.post('/login', async (req, res) => {
         id: user._id, email: user.email, name: user.name,
         profile: user.profile, settings: user.settings,
         premium: user.premium, partnerCode: user.partnerCode,
+        partnerId: user.partnerId, isPartnerViewer: user.isPartnerViewer,
         pregnancyMode: user.pregnancyMode,
       },
     });
