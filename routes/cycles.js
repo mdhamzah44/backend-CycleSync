@@ -117,7 +117,7 @@ router.post('/intercourse-log', auth, async (req, res) => {
 
     // Remove any existing entry for this date (upsert by date)
     cycle.intercourse = cycle.intercourse.filter(
-      (i: any) => new Date(i.date).toDateString() !== logDate.toDateString()
+       (i) => new Date(i.date).toDateString() !== logDate.toDateString()
     );
     cycle.intercourse.push({ date: logDate, protected: isProtected, contraceptionType, notes });
     await cycle.save();
