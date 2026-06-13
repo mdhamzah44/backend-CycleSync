@@ -5,9 +5,18 @@ const auth = require('../middleware/auth');
 const Cycle = require('../models/Cycle');
 const Symptom = require('../models/Symptom');
 const HealthLog = require('../models/HealthLog');
+const ChatSession = require('../models/ChatSession');
 const { predictNextCycle, calculateRegularityScore } = require('../utils/cyclePredictor');
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// ── Lazy Groq client ────────────────────────────────────────────────────────
+let _groq = null;
+function getGroq() {
+  if (!_groq) {
+    if (!process.env.GROQ_API_KEY) throw new Error('GROQ_API_KEY is not set');
+    _groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  }
+  return _groq;
+}
 
 const SYSTEM_PROMPT = `You are CycleSync AI, a compassionate and knowledgeable menstrual health assistant. 
 You help users understand their menstrual cycles, fertility, symptoms, and overall reproductive health.
@@ -23,12 +32,11 @@ Guidelines:
 - Never diagnose medical conditions
 - Focus on education, pattern recognition, and wellness tips`;
 
-// Chat with AI assistant
+// ── Chat with AI assistant ──────────────────────────────────────────────────
 router.post('/chat', auth, async (req, res) => {
   try {
     const { message, conversationHistory = [] } = req.body;
 
-    // Get user's cycle data for context
     const cycles = await Cycle.find({ userId: req.user._id }).sort({ startDate: -1 }).limit(6);
     const recentSymptoms = await Symptom.find({ userId: req.user._id }).sort({ date: -1 }).limit(7);
     const predictions = predictNextCycle(cycles, req.user.profile?.averageCycleLength, req.user.profile?.averagePeriodLength);
@@ -45,11 +53,11 @@ router.post('/chat', auth, async (req, res) => {
 ` : '[User Context: No cycle data available yet]';
 
     const messages = [
-      ...conversationHistory.slice(-8), // Keep last 8 messages for context
+      ...conversationHistory.slice(-8),
       { role: 'user', content: `${contextMessage}\n\nUser question: ${message}` },
     ];
 
-    const completion = await groq.chat.completions.create({
+    const completion = await getGroq().chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -62,12 +70,12 @@ router.post('/chat', auth, async (req, res) => {
     const reply = completion.choices[0]?.message?.content || 'I apologize, I could not process your request.';
     res.json({ reply, usage: completion.usage });
   } catch (err) {
-    console.error('AI error:', err);
+    console.error('AI chat error:', err);
     res.status(500).json({ error: 'AI service unavailable', details: err.message });
   }
 });
 
-// Get AI-powered insights
+// ── AI-powered insights ─────────────────────────────────────────────────────
 router.get('/insights', auth, async (req, res) => {
   try {
     const cycles = await Cycle.find({ userId: req.user._id }).sort({ startDate: -1 }).limit(6);
@@ -76,16 +84,21 @@ router.get('/insights', auth, async (req, res) => {
     const predictions = predictNextCycle(cycles, req.user.profile?.averageCycleLength, req.user.profile?.averagePeriodLength);
     const regularityScore = calculateRegularityScore(cycles);
 
+    const sleepLogs = healthLogs.filter(l => l.sleep?.hours);
+    const avgSleep = sleepLogs.length
+      ? (sleepLogs.reduce((a, b) => a + b.sleep.hours, 0) / sleepLogs.length).toFixed(1)
+      : 'no data';
+
     const dataContext = `
 User has ${cycles.length} cycle(s) logged.
 Regularity score: ${regularityScore || 'insufficient data'}/100
 Current cycle day: ${predictions?.currentCycleDay || 'unknown'}
 Recent symptoms: ${recentSymptoms.map(s => `${new Date(s.date).toLocaleDateString()}: ${s.symptoms?.map(x => x.type).join(', ')}`).join(' | ') || 'none'}
-Average sleep: ${healthLogs.filter(l => l.sleep?.hours).length > 0 ? (healthLogs.filter(l => l.sleep?.hours).reduce((a, b) => a + b.sleep.hours, 0) / healthLogs.filter(l => l.sleep?.hours).length).toFixed(1) : 'no data'} hrs
+Average sleep: ${avgSleep} hrs
 User goal: ${req.user.profile?.goals || 'tracking'}
 `;
 
-    const completion = await groq.chat.completions.create({
+    const completion = await getGroq().chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -109,15 +122,39 @@ User goal: ${req.user.profile?.goals || 'tracking'}
 
     res.json({ insights });
   } catch (err) {
+    console.error('AI insights error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Explain a symptom ───────────────────────────────────────────────────────
+router.post('/explain-symptom', auth, async (req, res) => {
+  try {
+    const { symptom, cycleDay } = req.body;
+
+    const completion = await getGroq().chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: `Explain why someone might experience "${symptom}" on cycle day ${cycleDay || 'unknown'}. What hormonal changes could cause this? Keep it brief and helpful (2-3 sentences).`,
+        },
+      ],
+      max_tokens: 250,
+      temperature: 0.6,
+    });
+
+    res.json({ explanation: completion.choices[0]?.message?.content });
+  } catch (err) {
+    console.error('AI explain error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ── Chat history ────────────────────────────────────────────────────────────
 
-const ChatSession = require('../models/ChatSession');
-
-// Get all saved chat sessions for this user
+// Get all saved chat sessions
 router.get('/chat-history', auth, async (req, res) => {
   try {
     const sessions = await ChatSession.find({ userId: req.user._id })
@@ -129,14 +166,13 @@ router.get('/chat-history', auth, async (req, res) => {
   }
 });
 
-// Save / upsert a chat session (frontend sends full message array)
+// Save / upsert a chat session
 router.post('/chat-history', auth, async (req, res) => {
   try {
     const { messages, sessionId } = req.body;
     if (!messages || !messages.length)
       return res.status(400).json({ error: 'No messages provided' });
 
-    // Only keep valid roles
     const validMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant');
     if (!validMessages.length)
       return res.status(400).json({ error: 'No valid messages' });
@@ -176,31 +212,6 @@ router.delete('/chat-history/:id', auth, async (req, res) => {
   try {
     await ChatSession.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Explain a symptom ───────────────────────────────────────────────────────
-// Explain a symptom
-router.post('/explain-symptom', auth, async (req, res) => {
-  try {
-    const { symptom, cycleDay } = req.body;
-
-    const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: `Explain why someone might experience "${symptom}" on cycle day ${cycleDay || 'unknown'}. What hormonal changes could cause this? Keep it brief and helpful (2-3 sentences).`,
-        },
-      ],
-      max_tokens: 250,
-      temperature: 0.6,
-    });
-
-    res.json({ explanation: completion.choices[0]?.message?.content });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

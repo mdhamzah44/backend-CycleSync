@@ -1,4 +1,5 @@
-require("dotenv").config();
+require("dotenv").config(); // must be first
+
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -16,20 +17,17 @@ const partnerRoutes = require('./routes/partner');
 
 const app = express();
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-console.log("GROQ KEY EXISTS:", !!process.env.GROQ_API_KEY);
-// DB Connection
+console.log('GROQ KEY EXISTS:', !!process.env.GROQ_API_KEY);
+
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/cyclesync')
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => console.error('❌ MongoDB error:', err));
 
-// Ensure models are registered
 require('./models/ChatSession');
 
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/cycles', cycleRoutes);
 app.use('/api/symptoms', symptomRoutes);
