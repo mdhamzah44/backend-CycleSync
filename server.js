@@ -1,4 +1,4 @@
-require('dotenv').config();
+require("dotenv").config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -20,6 +20,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+console.log("GROQ KEY EXISTS:", !!process.env.GROQ_API_KEY);
 // DB Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/cyclesync')
   .then(() => console.log('✅ MongoDB connected'))
