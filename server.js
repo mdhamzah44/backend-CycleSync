@@ -16,8 +16,51 @@ const partnerRoutes = require('./routes/partner');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// ── CORS ───────────────────────────────────────────────────────────────────
+// Explicit origins so Railway's HTTP→HTTPS redirect never hits a preflight.
+// Add your deployed web origin (e.g. Vercel/Netlify URL) to ALLOWED_ORIGINS.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
+// Always allow localhost dev origins
+const DEV_ORIGINS = [
+  'http://localhost:8081',
+  'http://localhost:19006',
+  'http://localhost:3000',
+  'http://127.0.0.1:8081',
+  'http://127.0.0.1:19006',
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow no-origin requests (native apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    const allowed = [...DEV_ORIGINS, ...ALLOWED_ORIGINS];
+    if (allowed.includes(origin) || process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    callback(new Error(`CORS: origin "${origin}" not allowed`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200, // 204 breaks some browsers
+}));
+
+// Force HTTPS redirect on Railway (before any routes)
+app.use((req, res, next) => {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    req.headers['x-forwarded-proto'] &&
+    req.headers['x-forwarded-proto'] !== 'https'
+  ) {
+    return res.redirect(301, `https://${req.headers.host}${req.url}`);
+  }
+  next();
+});
+
 app.use(express.json());
 
 // DB Connection
