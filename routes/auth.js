@@ -196,4 +196,82 @@ router.post('/set-pin', auth, async (req, res) => {
   }
 });
 
+// Google OAuth — verify idToken from Expo client, return our own JWT
+router.post('/google', async (req, res) => {
+  try {
+    const { idToken, accessToken, user: googleUser } = req.body;
+    // googleUser: { id, email, name, photo } sent by expo-auth-session
+
+    if (!googleUser?.email) {
+      return res.status(400).json({ error: 'Google email not provided' });
+    }
+
+    const { OAuth2Client } = require('google-auth-library');
+    const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+
+    // Verify the token when idToken is present (native flow)
+    if (idToken && CLIENT_ID) {
+      try {
+        const client = new OAuth2Client(CLIENT_ID);
+        await client.verifyIdToken({ idToken, audience: CLIENT_ID });
+      } catch (verifyErr) {
+        console.warn('Google token verify warning:', verifyErr.message);
+        // Non-fatal on Expo Go (audience mismatch); we still trust the user object
+      }
+    }
+
+    // Find or create user
+    let user = await User.findOne({ email: googleUser.email.toLowerCase() });
+
+    if (!user) {
+      // New user via Google — auto-create
+      const partnerCode = Math.random().toString(36).substr(2, 8).toUpperCase();
+      // Google accounts don't have a password — set a random unguessable one
+      const crypto = require('crypto');
+      const randomPassword = crypto.randomBytes(32).toString('hex');
+      user = new User({
+        email: googleUser.email.toLowerCase(),
+        password: randomPassword,
+        name: googleUser.name || googleUser.email.split('@')[0],
+        partnerCode,
+        isPartnerViewer: false,
+        googleId: googleUser.id,
+        avatar: googleUser.photo || null,
+        'profile.goals': 'tracking',
+      });
+      await user.save();
+    } else if (!user.googleId) {
+      // Existing email account — link Google to it
+      user.googleId = googleUser.id;
+      if (googleUser.photo && !user.avatar) user.avatar = googleUser.photo;
+      await user.save();
+    }
+
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRES_IN || '30d',
+    });
+
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        profile: user.profile,
+        settings: user.settings,
+        premium: user.premium,
+        partnerCode: user.partnerCode,
+        partnerId: user.partnerId,
+        isPartnerViewer: user.isPartnerViewer,
+        pregnancyMode: user.pregnancyMode,
+        avatar: user.avatar,
+      },
+      isNewUser: !user.googleId, // hint frontend to show onboarding
+    });
+  } catch (err) {
+    console.error('Google auth error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

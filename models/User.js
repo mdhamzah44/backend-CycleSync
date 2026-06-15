@@ -38,6 +38,8 @@ const userSchema = new mongoose.Schema({
   },
   pregnancyMode: { type: Boolean, default: false },
   pregnancyDueDate: Date,
+  googleId: { type: String, sparse: true },   // Google OAuth sub
+  avatar: String,                              // profile photo URL
   createdAt: { type: Date, default: Date.now },
 });
 
