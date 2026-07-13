@@ -18,7 +18,7 @@ router.post('/connect', auth, async (req, res) => {
     await User.findByIdAndUpdate(req.user._id, { partnerId: partner._id, isPartnerViewer: true });
     await User.findByIdAndUpdate(partner._id, {
       partnerId: req.user._id,
-      isPartnerViewer: false,
+      isPartnerViewer: false, // they are the tracker, not the viewer
       pendingPartnerRequest: {
         fromUserId: req.user._id,
         fromName: req.user.name,
@@ -106,6 +106,7 @@ router.get('/data', auth, async (req, res) => {
 });
 
 // ── Full home data for partner-viewer ──────────────────────────────────────
+// Returns everything the partner-viewer needs for their home screen
 router.get('/home-data', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -120,10 +121,12 @@ router.get('/home-data', auth, async (req, res) => {
     const regularityScore = calculateRegularityScore(cycles);
     const calendarMarkers = getCalendarMarkers(cycles, predictions);
 
+    // Recent symptoms (last 7 days — only show mood & energy, not detailed symptoms)
     const recentSymptoms = await Symptom.find({ userId: user.partnerId })
       .sort({ date: -1 }).limit(7)
       .select('date mood moodScore energyLevel stressLevel');
 
+    // Cycle stats
     const periodLengths = cycles.filter(c => c.periodLength).map(c => c.periodLength);
     const avgPeriodLength = periodLengths.length
       ? Math.round(periodLengths.reduce((a, b) => a + b) / periodLengths.length)

@@ -1,0 +1,21 @@
+[build]
+  command = "npm install"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Route all API calls to the Express app running inside the Netlify Function.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+# Optional convenience alias for the old bare "/health" status-check endpoint.
+# (Not to be confused with /api/health, which is the health-log data routes.)
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/api/health-check"
+  status = 200
+  force = true
